@@ -1,3 +1,4 @@
+import http from "node:http";
 import "dotenv/config";
 import makeWASocket, {
   Browsers,
@@ -7,16 +8,32 @@ import makeWASocket, {
 import QRCode from "qrcode-terminal";
 import pino from "pino";
 
+// --- 1. Render Health-Check Web Server ---
+const PORT = process.env.PORT || 10000;
+
+http.createServer((req, res) => {
+  if (req.url === "/health" || req.url === "/") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok", worker: "agie-whatsapp-worker" }));
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+}).listen(PORT, "0.0.0.0", () => {
+  console.log(`Render health check server listening on port ${PORT}`);
+});
+
+// --- 2. Environment & Config ---
 const {
   AGIE_INGEST_URL,
   AGIE_INGEST_SECRET,
-  AGIE_WORKER_ID = "agie-gateway-replit",
+  AGIE_WORKER_ID = "agie-gateway-render",
   AGIE_PHONE_NUMBER = "",
   AGIE_PAIRING_PHONE = "",
 } = process.env;
 
 if (!AGIE_INGEST_URL || !AGIE_INGEST_SECRET) {
-  console.error("Missing AGIE_INGEST_URL or AGIE_INGEST_SECRET in Replit Secrets.");
+  console.error("Missing AGIE_INGEST_URL or AGIE_INGEST_SECRET in Render Environment.");
   process.exit(1);
 }
 
@@ -27,6 +44,7 @@ const FLUSH_MS = Number(process.env.FLUSH_MS || 60_000);
 let lastLatencyMs = 0;
 let eventsSinceBeat = 0;
 
+// --- 3. Ingestion Function ---
 async function ingest(events) {
   if (!events.length) return;
   const started = Date.now();
@@ -52,6 +70,7 @@ async function ingest(events) {
   }
 }
 
+// --- 4. Counters & Group State ---
 const counters = new Map();
 const knownGroups = new Map();
 const pendingEvents = [];
@@ -98,7 +117,6 @@ function phoneDigits(jid) {
 }
 
 function flushMembers() {
-  const now = new Date();
   for (const [groupJid, members] of counters) {
     const list = [...members.entries()].map(([jid, b]) => ({
       jid,
@@ -141,6 +159,7 @@ setInterval(() => void flush(), FLUSH_MS);
 
 let currentPhone = "";
 
+// --- 5. WhatsApp Client Startup ---
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState("./agie-session");
   const sock = makeWASocket({
@@ -240,3 +259,4 @@ async function start() {
 }
 
 void start();
+                  
